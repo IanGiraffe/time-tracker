@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Tracker Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <header class="page-header">
+        <h1>Time Tracker</h1>
+        <div class="header-controls">
+            <label>
+                Date
+                <input type="date" id="date-picker">
+            </label>
+            <button id="refresh-btn" type="button">Refresh</button>
+            <span id="collector-status" class="status-indicator" title="Collector status"></span>
+        </div>
+    </header>
+
+    <main>
+        <section class="card" id="summary-card">
+            <div class="card-header">
+                <h2>Summary</h2>
+                <button id="today-btn" type="button">Today</button>
+            </div>
+            <div id="summary-content" class="summary-grid">
+                <!-- Populated by JavaScript -->
+            </div>
+        </section>
+
+        <section class="card" id="events-card">
+            <div class="card-header">
+                <h2>Activity Timeline</h2>
+            </div>
+            <div class="table-container">
+                <table id="events-table">
+                    <thead>
+                        <tr>
+                            <th>Start</th>
+                            <th>End</th>
+                            <th>Duration</th>
+                            <th>Process</th>
+                            <th>Window</th>
+                            <th>Idle</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card" id="editor-card" hidden>
+            <div class="card-header">
+                <h2>Edit Event</h2>
+                <button id="cancel-edit-btn" type="button">Close</button>
+            </div>
+            <form id="editor-form" class="editor-form">
+                <input type="hidden" id="editor-event-id">
+                <div class="form-field">
+                    <label for="editor-start">Start</label>
+                    <input type="datetime-local" id="editor-start" step="1" required>
+                </div>
+                <div class="form-field">
+                    <label for="editor-end">End</label>
+                    <input type="datetime-local" id="editor-end" step="1" required>
+                </div>
+                <div class="form-field">
+                    <label for="editor-process">Process</label>
+                    <input type="text" id="editor-process" placeholder="e.g. chrome.exe">
+                </div>
+                <div class="form-field">
+                    <label for="editor-window">Window / Tab</label>
+                    <textarea id="editor-window" rows="2"></textarea>
+                </div>
+                <div class="form-field checkbox-field">
+                    <label for="editor-idle">
+                        <input type="checkbox" id="editor-idle">
+                        Mark as idle
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button type="submit">Save changes</button>
+                </div>
+            </form>
+        </section>
+    </main>
+
+    <div id="toast" hidden></div>
+
+    <script type="module" src="/static/app.js"></script>
+</body>
+</html>
