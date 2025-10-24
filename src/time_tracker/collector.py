@@ -20,6 +20,9 @@ from .normalization import normalize_window_title
 
 logger = logging.getLogger(__name__)
 
+SLEEP_PROCESS_NAME = "system"
+SLEEP_WINDOW_TITLE = "System Sleep"
+
 
 class WindowsIdleDetector:
     """Detects idle state using Win32 APIs."""
@@ -83,6 +86,7 @@ class WindowsActiveWindowProbe:
 class CollectorState:
     current_event: Optional[ActivityEvent] = None
     last_flush_time: datetime = field(default_factory=datetime.now)
+    last_sample_at: Optional[datetime] = None
 
 
 class ActivityCollector:
@@ -116,6 +120,7 @@ class ActivityCollector:
 
     def sample_once(self) -> None:
         now = datetime.now()
+        self._handle_sample_gap(now)
         idle = self._idle_detector.is_idle(
             int(self.settings.idle_threshold.total_seconds() * 1000)
         )
@@ -134,6 +139,7 @@ class ActivityCollector:
                 sample.process_name,
                 sample.window_title,
             )
+        self._record_sample_time(now)
 
     def _create_or_extend_event(
         self,
@@ -197,6 +203,35 @@ class ActivityCollector:
             and event.process_name == process_name
             and event.window_title == window_title
         )
+
+    def _handle_sample_gap(self, timestamp: datetime) -> None:
+        with self._lock:
+            last = self._state.last_sample_at
+            if not last:
+                return
+            gap = timestamp - last
+            if gap < self.settings.sleep_gap:
+                return
+
+            if self._state.current_event:
+                self._state.current_event.end_time = last
+                self._pending.append(self._state.current_event)
+                self._state.current_event = None
+
+            sleep_event = ActivityEvent(
+                start_time=last,
+                end_time=timestamp,
+                process_name=SLEEP_PROCESS_NAME,
+                window_title=SLEEP_WINDOW_TITLE,
+                is_idle=True,
+            )
+            self._pending.append(sleep_event)
+            self._flush_locked()
+            logger.info("Detected system sleep gap lasting %s", gap)
+
+    def _record_sample_time(self, timestamp: datetime) -> None:
+        with self._lock:
+            self._state.last_sample_at = timestamp
 
     def _run_loop(self, stop_event: threading.Event) -> None:
         logger.info("Starting collector; writing to %s", self.db_path)

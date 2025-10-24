@@ -86,12 +86,10 @@ def insert_events(conn: sqlite3.Connection, events: Iterable[ActivityEvent]) -> 
     )
 
 
-def fetch_summary_by_day(
-    conn: sqlite3.Connection, day: datetime
+def fetch_activity_totals(
+    conn: sqlite3.Connection, start: datetime, end: datetime
 ) -> list[sqlite3.Row]:
-    """Return total seconds for each idle flag/process on a given day."""
-    start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-    end = start + timedelta(days=1)
+    """Return total seconds for each activity grouped by process/window."""
     start_iso = start.strftime(DATETIME_FMT)
     end_iso = end.strftime(DATETIME_FMT)
     return list(
@@ -110,6 +108,15 @@ def fetch_summary_by_day(
             (start_iso, end_iso),
         )
     )
+
+
+def fetch_summary_by_day(
+    conn: sqlite3.Connection, day: datetime
+) -> list[sqlite3.Row]:
+    """Return total seconds for each idle flag/process on a given day."""
+    start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return fetch_activity_totals(conn, start, end)
 
 
 def fetch_events_for_day(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 _BROWSER_SUFFIXES: dict[str, tuple[str, ...]] = {
@@ -22,13 +23,20 @@ def normalize_window_title(process_name: Optional[str], window_title: Optional[s
         return normalized or None
 
     suffixes = _BROWSER_SUFFIXES.get(process_name.lower())
-    if not suffixes:
-        return normalized or None
+    if suffixes:
+        for suffix in suffixes:
+            if normalized.endswith(suffix):
+                normalized = normalized[: -len(suffix)].rstrip(" -")
+                break
 
-    for suffix in suffixes:
-        if normalized.endswith(suffix):
-            trimmed = normalized[: -len(suffix)].rstrip(" -")
-            if trimmed:
-                return trimmed
+    normalized = _strip_tab_count(normalized)
+    normalized = re.sub(r"\s{2,}", " ", normalized).strip()
     return normalized or None
 
+
+_EXTRA_TAB_COUNT_PATTERN = re.compile(r"\s+and\s+\d+\s+more\s+pages?", re.IGNORECASE)
+
+
+def _strip_tab_count(value: str) -> str:
+    cleaned = _EXTRA_TAB_COUNT_PATTERN.sub("", value)
+    return cleaned.strip(" -|")

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -19,10 +20,12 @@ from .config import CollectorSettings
 from .db import (
     DATETIME_FMT,
     database_connection,
+    fetch_activity_totals,
     fetch_events_for_day,
     fetch_summary_by_day,
     update_event,
 )
+from .normalization import normalize_window_title
 from .paths import get_db_path
 
 logger = logging.getLogger(__name__)
@@ -132,6 +135,69 @@ def create_app(
             "idle_minutes": resolved_settings.idle_threshold.total_seconds() / 60.0,
         }
 
+    @app.get("/api/overview")
+    def overview(
+        request: Request,
+        start: Optional[str] = Query(
+            default=None,
+            description="Start date in YYYY-MM-DD format (inclusive).",
+        ),
+        end: Optional[str] = Query(
+            default=None,
+            description="End date in YYYY-MM-DD format (inclusive).",
+        ),
+    ) -> Dict[str, Any]:
+        start_day = _parse_date(start)
+        end_day = _parse_date(end) if end else start_day
+        if end_day < start_day:
+            raise HTTPException(
+                status_code=400, detail="end date must be on or after start date"
+            )
+        end_exclusive = end_day + timedelta(days=1)
+
+        with database_connection(request.app.state.db_path) as conn:
+            rows = fetch_activity_totals(conn, start_day, end_exclusive)
+
+        buckets: dict[tuple[Optional[str], Optional[str], bool], int] = defaultdict(int)
+        for row in rows:
+            seconds = int(row["seconds"] or 0)
+            title = _canonical_window_title(row["process_name"], row["window_title"])
+            key = (row["process_name"], title, bool(row["is_idle"]))
+            buckets[key] += seconds
+
+        active_entries: list[Dict[str, Any]] = []
+        idle_entries: list[Dict[str, Any]] = []
+        total_active = 0
+        total_idle = 0
+        for (process_name, title, is_idle), seconds in buckets.items():
+            entry = {
+                "process_name": process_name,
+                "window_title": title,
+                "seconds": seconds,
+                "is_idle": is_idle,
+            }
+            if is_idle:
+                total_idle += seconds
+                idle_entries.append(entry)
+            else:
+                total_active += seconds
+                active_entries.append(entry)
+
+        active_entries.sort(key=lambda item: item["seconds"], reverse=True)
+        idle_entries.sort(key=lambda item: item["seconds"], reverse=True)
+
+        return {
+            "start": start_day.strftime("%Y-%m-%d"),
+            "end": end_day.strftime("%Y-%m-%d"),
+            "totals": {
+                "active_seconds": total_active,
+                "idle_seconds": total_idle,
+                "overall_seconds": total_active + total_idle,
+            },
+            "entries": active_entries,
+            "idle_entries": idle_entries,
+        }
+
     @app.get("/api/summary")
     def summary(
         request: Request,
@@ -220,11 +286,28 @@ def create_app(
 
 def _parse_date(value: Optional[str]) -> datetime:
     if not value:
-        return datetime.now()
+        return _start_of_day(datetime.now())
     try:
-        return datetime.strptime(value, "%Y-%m-%d")
+        parsed = datetime.strptime(value, "%Y-%m-%d")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid date format") from exc
+    return _start_of_day(parsed)
+
+
+def _start_of_day(value: datetime) -> datetime:
+    return value.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _canonical_window_title(
+    process_name: Optional[str], window_title: Optional[str]
+) -> Optional[str]:
+    normalized = normalize_window_title(process_name, window_title)
+    if normalized:
+        return normalized
+    if window_title:
+        fallback = window_title.strip()
+        return fallback or None
+    return None
 
 
 def _row_to_event_payload(row: Any) -> Dict[str, Any]:

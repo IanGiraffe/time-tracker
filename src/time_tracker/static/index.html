@@ -8,85 +8,149 @@
 </head>
 <body>
     <header class="page-header">
-        <h1>Time Tracker</h1>
-        <div class="header-controls">
-            <label>
-                Date
-                <input type="date" id="date-picker">
-            </label>
-            <button id="refresh-btn" type="button">Refresh</button>
+        <div class="header-top">
+            <h1>Time Tracker</h1>
             <span id="collector-status" class="status-indicator" title="Collector status"></span>
         </div>
+        <nav class="nav-tabs">
+            <button type="button" class="nav-tab active" data-view="overview">Overview</button>
+            <button type="button" class="nav-tab" data-view="timeline">Timeline</button>
+        </nav>
     </header>
 
     <main>
-        <section class="card" id="summary-card">
-            <div class="card-header">
-                <h2>Summary</h2>
-                <button id="today-btn" type="button">Today</button>
-            </div>
-            <div id="summary-content" class="summary-grid">
-                <!-- Populated by JavaScript -->
-            </div>
+        <section id="overview-view" class="view">
+            <section class="card" id="overview-card">
+                <div class="card-header">
+                    <h2>App Totals</h2>
+                    <div class="range-controls">
+                        <label>
+                            Start
+                            <input type="date" id="overview-start">
+                        </label>
+                        <label>
+                            End
+                            <input type="date" id="overview-end">
+                        </label>
+                        <button id="overview-apply" type="button">Apply</button>
+                        <button id="overview-today" type="button">Today</button>
+                    </div>
+                </div>
+                <div id="overview-summary" class="summary-grid">
+                    <!-- Populated by JavaScript -->
+                </div>
+                <div class="table-container">
+                    <table id="overview-table">
+                        <thead>
+                            <tr>
+                                <th>Page / App</th>
+                                <th>Process</th>
+                                <th>Active Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card" id="idle-card">
+                <div class="card-header">
+                    <h2>Idle &amp; Away Breakdown</h2>
+                </div>
+                <div class="table-container">
+                    <table id="idle-table">
+                        <thead>
+                            <tr>
+                                <th>Reason</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </section>
 
-        <section class="card" id="events-card">
-            <div class="card-header">
-                <h2>Activity Timeline</h2>
-            </div>
-            <div class="table-container">
-                <table id="events-table">
-                    <thead>
-                        <tr>
-                            <th>Start</th>
-                            <th>End</th>
-                            <th>Duration</th>
-                            <th>Process</th>
-                            <th>Window</th>
-                            <th>Idle</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <!-- Populated by JavaScript -->
-                    </tbody>
-                </table>
-            </div>
-        </section>
+        <section id="timeline-view" class="view" hidden>
+            <section class="card" id="summary-card">
+                <div class="card-header">
+                    <h2>Summary</h2>
+                    <div class="timeline-controls">
+                        <label>
+                            Date
+                            <input type="date" id="date-picker">
+                        </label>
+                        <button id="today-btn" type="button">Today</button>
+                        <button id="refresh-btn" type="button">Refresh</button>
+                    </div>
+                </div>
+                <div id="summary-content" class="summary-grid">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </section>
 
-        <section class="card" id="editor-card" hidden>
-            <div class="card-header">
-                <h2>Edit Event</h2>
-                <button id="cancel-edit-btn" type="button">Close</button>
-            </div>
-            <form id="editor-form" class="editor-form">
-                <input type="hidden" id="editor-event-id">
-                <div class="form-field">
-                    <label for="editor-start">Start</label>
-                    <input type="datetime-local" id="editor-start" step="1" required>
+            <section class="card" id="events-card">
+                <div class="card-header">
+                    <h2>Activity Timeline</h2>
                 </div>
-                <div class="form-field">
-                    <label for="editor-end">End</label>
-                    <input type="datetime-local" id="editor-end" step="1" required>
+                <div class="table-container">
+                    <table id="events-table">
+                        <thead>
+                            <tr>
+                                <th>Start</th>
+                                <th>End</th>
+                                <th>Duration</th>
+                                <th>Process</th>
+                                <th>Window</th>
+                                <th>Idle</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
                 </div>
-                <div class="form-field">
-                    <label for="editor-process">Process</label>
-                    <input type="text" id="editor-process" placeholder="e.g. chrome.exe">
+            </section>
+
+            <section class="card" id="editor-card" hidden>
+                <div class="card-header">
+                    <h2>Edit Event</h2>
+                    <button id="cancel-edit-btn" type="button">Close</button>
                 </div>
-                <div class="form-field">
-                    <label for="editor-window">Window / Tab</label>
-                    <textarea id="editor-window" rows="2"></textarea>
-                </div>
-                <div class="form-field checkbox-field">
-                    <label for="editor-idle">
-                        <input type="checkbox" id="editor-idle">
-                        Mark as idle
-                    </label>
-                </div>
-                <div class="form-actions">
-                    <button type="submit">Save changes</button>
-                </div>
-            </form>
+                <form id="editor-form" class="editor-form">
+                    <input type="hidden" id="editor-event-id">
+                    <div class="form-field">
+                        <label for="editor-start">Start</label>
+                        <input type="datetime-local" id="editor-start" step="1" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="editor-end">End</label>
+                        <input type="datetime-local" id="editor-end" step="1" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="editor-process">Process</label>
+                        <input type="text" id="editor-process" placeholder="e.g. chrome.exe">
+                    </div>
+                    <div class="form-field">
+                        <label for="editor-window">Window / Tab</label>
+                        <textarea id="editor-window" rows="2"></textarea>
+                    </div>
+                    <div class="form-field checkbox-field">
+                        <label for="editor-idle">
+                            <input type="checkbox" id="editor-idle">
+                            Mark as idle
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit">Save changes</button>
+                    </div>
+                </form>
+            </section>
         </section>
     </main>
 
