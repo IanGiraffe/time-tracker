@@ -9,6 +9,7 @@ Lightweight, local-first tooling to observe where your workday goes without depe
 - SQLite storage for event logs and daily rollups.
 - Command-line tools to run the collector and review summaries.
 - Local web dashboard to inspect, edit, and categorize your timeline.
+- Project assignments that roll up window/app activity into project totals.
 
 ## Usage
 
@@ -37,6 +38,8 @@ time-tracker web --open-browser
 The server starts on `http://127.0.0.1:8765` by default, keeps the collector running in the background, and exposes a dashboard for summaries and per-event edits. Override the port, host, or sampling cadence with `--help`.
 
 Prefer to start it without touching a terminal? Double-click `start_dashboard.pyw` from the project root (or create a desktop shortcut to it). The script bootstraps the Python path, runs the collector + API, and opens your browser automatically.
+
+From the Overview tab you can now assign a browser tab or application to a project. Once assigned, new activity for that window/app is automatically rolled into the project totals shown alongside the daily summary.
 
 ## Roadmap
 

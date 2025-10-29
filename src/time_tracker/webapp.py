@@ -22,8 +22,10 @@ from .db import (
     database_connection,
     fetch_activity_totals,
     fetch_events_for_day,
+    fetch_project_mappings,
     fetch_summary_by_day,
     update_event,
+    upsert_project_mapping,
 )
 from .normalization import normalize_window_title
 from .paths import get_db_path
@@ -85,6 +87,14 @@ class EventUpdate(BaseModel):
     process_name: Optional[str] = None
     window_title: Optional[str] = None
     is_idle: Optional[bool] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProjectMappingPayload(BaseModel):
+    project_name: str
+    process_name: Optional[str] = None
+    window_title: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -157,6 +167,7 @@ def create_app(
 
         with database_connection(request.app.state.db_path) as conn:
             rows = fetch_activity_totals(conn, start_day, end_exclusive)
+            mapping_rows = fetch_project_mappings(conn)
 
         buckets: dict[tuple[Optional[str], Optional[str], bool], int] = defaultdict(int)
         for row in rows:
@@ -165,16 +176,24 @@ def create_app(
             key = (row["process_name"], title, bool(row["is_idle"]))
             buckets[key] += seconds
 
+        project_lookup = _build_project_lookup(mapping_rows)
         active_entries: list[Dict[str, Any]] = []
         idle_entries: list[Dict[str, Any]] = []
+        project_totals: dict[str, int] = defaultdict(int)
         total_active = 0
         total_idle = 0
         for (process_name, title, is_idle), seconds in buckets.items():
+            project_name: Optional[str] = None
+            if not is_idle:
+                project_name = _resolve_project(project_lookup, process_name, title)
+                if project_name:
+                    project_totals[project_name] += seconds
             entry = {
                 "process_name": process_name,
                 "window_title": title,
                 "seconds": seconds,
                 "is_idle": is_idle,
+                "project_name": project_name,
             }
             if is_idle:
                 total_idle += seconds
@@ -185,6 +204,12 @@ def create_app(
 
         active_entries.sort(key=lambda item: item["seconds"], reverse=True)
         idle_entries.sort(key=lambda item: item["seconds"], reverse=True)
+        project_entries = [
+            {"project_name": name, "seconds": total}
+            for name, total in sorted(
+                project_totals.items(), key=lambda item: item[1], reverse=True
+            )
+        ]
 
         return {
             "start": start_day.strftime("%Y-%m-%d"),
@@ -196,6 +221,88 @@ def create_app(
             },
             "entries": active_entries,
             "idle_entries": idle_entries,
+            "project_totals": project_entries,
+        }
+
+    @app.get("/api/project-mappings")
+    def list_project_mappings(request: Request) -> Dict[str, Any]:
+        with database_connection(request.app.state.db_path) as conn:
+            rows = fetch_project_mappings(conn)
+        mappings_payload = [
+            {
+                "id": row["id"],
+                "project_name": row["project_name"],
+                "process_name": row["process_name"],
+                "window_title": row["window_title"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
+            for row in rows
+        ]
+        project_names = sorted(
+            {row["project_name"] for row in rows if row["project_name"]},
+            key=str.casefold,
+        )
+        return {
+            "mappings": mappings_payload,
+            "projects": project_names,
+        }
+
+    @app.post("/api/project-mappings")
+    def create_or_update_project_mapping(
+        payload: ProjectMappingPayload, request: Request
+    ) -> Dict[str, Any]:
+        project_name = payload.project_name.strip()
+        if not project_name:
+            raise HTTPException(status_code=400, detail="project_name is required")
+
+        process_name = payload.process_name.strip() if payload.process_name else None
+        canonical_title = (
+            _canonical_window_title(process_name, payload.window_title)
+            if payload.window_title
+            else None
+        )
+        normalized_process = _normalize_process_name(process_name)
+
+        with database_connection(request.app.state.db_path) as conn:
+            try:
+                upsert_project_mapping(
+                    conn,
+                    project_name,
+                    process_name=normalized_process,
+                    window_title=canonical_title,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            row = conn.execute(
+                """
+                SELECT id, project_name, process_name, window_title, created_at, updated_at
+                FROM project_mappings
+                WHERE
+                    ((? IS NULL AND process_name IS NULL) OR process_name = ?)
+                    AND
+                    ((? IS NULL AND window_title IS NULL) OR window_title = ?)
+                """,
+                (
+                    normalized_process,
+                    normalized_process,
+                    canonical_title,
+                    canonical_title,
+                ),
+            ).fetchone()
+
+        if row is None:
+            raise HTTPException(status_code=500, detail="Failed to persist mapping.")
+
+        return {
+            "mapping": {
+                "id": row["id"],
+                "project_name": row["project_name"],
+                "process_name": row["process_name"],
+                "window_title": row["window_title"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
         }
 
     @app.get("/api/summary")
@@ -307,6 +414,46 @@ def _canonical_window_title(
     if window_title:
         fallback = window_title.strip()
         return fallback or None
+    return None
+
+
+def _normalize_process_name(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    lowered = value.strip().lower()
+    return lowered or None
+
+
+def _build_project_lookup(
+    rows: list[Any],
+) -> dict[tuple[Optional[str], Optional[str]], str]:
+    lookup: dict[tuple[Optional[str], Optional[str]], str] = {}
+    for row in rows:
+        process_key = _normalize_process_name(row["process_name"])
+        title_key = row["window_title"] if row["window_title"] else None
+        project_name = row["project_name"].strip()
+        if not project_name:
+            continue
+        lookup[(process_key, title_key)] = project_name
+    return lookup
+
+
+def _resolve_project(
+    lookup: dict[tuple[Optional[str], Optional[str]], str],
+    process_name: Optional[str],
+    window_title: Optional[str],
+) -> Optional[str]:
+    process_key = _normalize_process_name(process_name)
+    title_key = window_title if window_title else None
+    candidates = [
+        (process_key, title_key),
+        (process_key, None),
+        (None, title_key),
+    ]
+    for key in candidates:
+        project = lookup.get(key)
+        if project:
+            return project
     return None
 
 

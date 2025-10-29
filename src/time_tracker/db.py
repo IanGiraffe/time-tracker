@@ -58,6 +58,23 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_events_start_time
             ON activity_events(start_time);
+
+        CREATE TABLE IF NOT EXISTS project_mappings (
+            id INTEGER PRIMARY KEY,
+            project_name TEXT NOT NULL,
+            process_name TEXT,
+            window_title TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TRIGGER IF NOT EXISTS trg_project_mappings_update_timestamp
+        AFTER UPDATE ON project_mappings
+        BEGIN
+            UPDATE project_mappings
+            SET updated_at = CURRENT_TIMESTAMP
+            WHERE id = NEW.id;
+        END;
         """
     )
 
@@ -194,3 +211,66 @@ def update_event(
     )
     if cur.rowcount == 0:
         raise ValueError(f"No event found for id={event_id}")
+
+
+def upsert_project_mapping(
+    conn: sqlite3.Connection,
+    project_name: str,
+    *,
+    process_name: Optional[str] = None,
+    window_title: Optional[str] = None,
+) -> None:
+    """Create or update a project mapping for a process/window combination."""
+    normalized_project = project_name.strip()
+    if not normalized_project:
+        raise ValueError("project_name must not be empty")
+
+    normalized_process = process_name.lower().strip() if process_name else None
+    normalized_window = window_title.strip() if window_title else None
+
+    existing = conn.execute(
+        """
+        SELECT id FROM project_mappings
+        WHERE
+            ((? IS NULL AND process_name IS NULL) OR process_name = ?)
+            AND
+            ((? IS NULL AND window_title IS NULL) OR window_title = ?)
+        """,
+        (
+            normalized_process,
+            normalized_process,
+            normalized_window,
+            normalized_window,
+        ),
+    ).fetchone()
+
+    if existing:
+        conn.execute(
+            """
+            UPDATE project_mappings
+            SET project_name = ?, process_name = ?, window_title = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (normalized_project, normalized_process, normalized_window, existing["id"]),
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO project_mappings (project_name, process_name, window_title)
+            VALUES (?, ?, ?)
+            """,
+            (normalized_project, normalized_process, normalized_window),
+        )
+
+
+def fetch_project_mappings(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Return all stored project mappings."""
+    return list(
+        conn.execute(
+            """
+            SELECT id, project_name, process_name, window_title, created_at, updated_at
+            FROM project_mappings
+            ORDER BY project_name COLLATE NOCASE, process_name, window_title
+            """
+        )
+    )

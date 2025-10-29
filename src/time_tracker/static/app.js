@@ -12,6 +12,58 @@ class OverviewView {
         this.summaryContainer = document.getElementById("overview-summary");
         this.tableBody = document.querySelector("#overview-table tbody");
         this.idleTableBody = document.querySelector("#idle-table tbody");
+        this.projectTableBody = document.querySelector("#projects-table tbody");
+        this.knownProjects = [];
+        this.projectOptionsId = `project-options-${Math.random().toString(36).slice(2, 8)}`;
+        this.projectOptionsList = document.createElement("datalist");
+        this.projectOptionsList.id = this.projectOptionsId;
+        document.body.appendChild(this.projectOptionsList);
+        this.lastProjectName = "";
+    }
+
+    normalizeProjectList(names) {
+        const map = new Map();
+        if (Array.isArray(names)) {
+            for (const raw of names) {
+                if (typeof raw !== "string") {
+                    continue;
+                }
+                const trimmed = raw.trim();
+                if (!trimmed) {
+                    continue;
+                }
+                const key = trimmed.toLowerCase();
+                if (!map.has(key)) {
+                    map.set(key, trimmed);
+                }
+            }
+        }
+        return Array.from(map.values()).sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: "base" })
+        );
+    }
+
+    updateProjectOptionsList(projectNames) {
+        if (!this.projectOptionsList) {
+            return;
+        }
+        this.projectOptionsList.innerHTML = "";
+        for (const name of projectNames) {
+            const option = document.createElement("option");
+            option.value = name;
+            this.projectOptionsList.appendChild(option);
+        }
+    }
+
+    mergeProjectNames(names) {
+        const merged = this.normalizeProjectList([...(this.knownProjects ?? []), ...(names ?? [])]);
+        const hasChanged =
+            merged.length !== this.knownProjects.length ||
+            merged.some((value, index) => value !== this.knownProjects[index]);
+        if (hasChanged) {
+            this.knownProjects = merged;
+            this.updateProjectOptionsList(merged);
+        }
     }
 
     init() {
@@ -43,6 +95,7 @@ class OverviewView {
         if (!this.startInput.value || !this.endInput.value) {
             this.setToday();
         }
+        await this.loadProjectMappings();
         await this.refresh();
     }
 
@@ -69,6 +122,21 @@ class OverviewView {
             console.error(error);
             this.renderError();
             showToast("Unable to load overview.", true);
+        }
+    }
+
+    async loadProjectMappings() {
+        try {
+            const response = await fetch("/api/project-mappings");
+            if (!response.ok) {
+                throw new Error(`Projects request failed: ${response.status}`);
+            }
+            const data = await response.json();
+            const projectNames = this.normalizeProjectList(data?.projects ?? []);
+            this.knownProjects = projectNames;
+            this.updateProjectOptionsList(projectNames);
+        } catch (error) {
+            console.error(error);
         }
     }
 
@@ -99,6 +167,7 @@ class OverviewView {
         const totals = data?.totals ?? {};
         const entries = Array.isArray(data?.entries) ? data.entries : [];
         const idleEntries = Array.isArray(data?.idle_entries) ? data.idle_entries : [];
+        const projectTotals = Array.isArray(data?.project_totals) ? data.project_totals : [];
 
         this.summaryContainer.innerHTML = `
             <div class="summary-tile">
@@ -117,28 +186,144 @@ class OverviewView {
 
         this.renderActiveTable(entries);
         this.renderIdleTable(idleEntries);
+        this.renderProjectTable(projectTotals);
+
+        if (projectTotals.length) {
+            const newNames = projectTotals
+                .map((item) => (typeof item?.project_name === "string" ? item.project_name : null))
+                .filter((name) => typeof name === "string" && name.trim().length > 0)
+                .map((name) => name.trim());
+            if (newNames.length) {
+                this.mergeProjectNames(newNames);
+            }
+        }
     }
 
     renderActiveTable(entries) {
         this.tableBody.innerHTML = "";
         if (!entries.length) {
-            this.tableBody.appendChild(createEmptyRow(3, "No active activity recorded for this range."));
+            this.tableBody.appendChild(
+                createEmptyRow(4, "No active activity recorded for this range.")
+            );
             return;
         }
 
+        const MIN_SIGNIFICANT_SECONDS = 60;
+        const significantEntries = [];
+        const quickEntries = [];
         for (const entry of entries) {
+            const seconds = Number(entry.seconds ?? 0);
+            if (seconds < MIN_SIGNIFICANT_SECONDS) {
+                quickEntries.push(entry);
+            } else {
+                significantEntries.push(entry);
+            }
+        }
+
+        const renderEntryRow = (entry) => {
             const row = document.createElement("tr");
             const labelCell = document.createElement("td");
             labelCell.textContent = formatEntryLabel(entry);
 
             const processCell = document.createElement("td");
-            processCell.textContent = entry.process_name ?? "—";
+            processCell.textContent = entry.process_name ?? "-";
+
+            const projectCell = document.createElement("td");
+            projectCell.className = "project-cell";
+            const selectorWrap = document.createElement("div");
+            selectorWrap.className = "project-selector-wrap";
+
+            const projectInput = document.createElement("input");
+            projectInput.type = "text";
+            projectInput.className = "project-selector";
+            projectInput.placeholder = "Select or type project";
+            projectInput.value = entry.project_name ?? "";
+            projectInput.dataset.initialValue = entry.project_name ?? "";
+            projectInput.setAttribute("list", this.projectOptionsId);
+            projectInput.autocomplete = "off";
+            projectInput.spellcheck = false;
+            if (!entry.project_name && this.lastProjectName) {
+                projectInput.placeholder = `e.g. ${this.lastProjectName}`;
+            }
+
+            const pickerButton = document.createElement("button");
+            pickerButton.type = "button";
+            pickerButton.className = "project-picker-button";
+            pickerButton.setAttribute("aria-label", "Show project suggestions");
+            pickerButton.addEventListener("click", () => {
+                projectInput.focus();
+                if (typeof projectInput.showPicker === "function") {
+                    projectInput.showPicker();
+                }
+            });
+
+            selectorWrap.append(projectInput, pickerButton);
+
+            const statusLabel = document.createElement("span");
+            statusLabel.className = "project-status";
+
+            const updateStatusForInput = () => {
+                const normalized = projectInput.value.trim();
+                const original = (projectInput.dataset.initialValue ?? "").trim();
+                if (normalized !== original) {
+                    statusLabel.textContent = "Unsaved";
+                    statusLabel.classList.add("visible");
+                    statusLabel.classList.remove("error");
+                } else {
+                    statusLabel.textContent = "";
+                    statusLabel.classList.remove("visible");
+                    statusLabel.classList.remove("error");
+                }
+            };
+
+            projectInput.addEventListener("input", updateStatusForInput);
+
+            projectInput.addEventListener("keydown", (event) => {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    projectInput.blur();
+                } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    projectInput.value = projectInput.dataset.initialValue ?? "";
+                    updateStatusForInput();
+                    projectInput.dataset.skipCommit = "true";
+                    projectInput.blur();
+                }
+            });
+
+            projectInput.addEventListener("blur", () => {
+                if (projectInput.dataset.skipCommit === "true") {
+                    delete projectInput.dataset.skipCommit;
+                    return;
+                }
+                void this.handleProjectCommit(entry, projectInput, statusLabel);
+            });
+
+            projectCell.append(selectorWrap, statusLabel);
+            updateStatusForInput();
 
             const durationCell = document.createElement("td");
+            durationCell.className = "numeric-cell";
             durationCell.textContent = formatDuration(entry.seconds ?? 0);
 
-            row.append(labelCell, processCell, durationCell);
+            row.append(labelCell, processCell, projectCell, durationCell);
             this.tableBody.appendChild(row);
+        };
+
+        if (significantEntries.length) {
+            for (const entry of significantEntries) {
+                renderEntryRow(entry);
+            }
+        }
+        if (quickEntries.length) {
+            if (significantEntries.length) {
+                this.tableBody.appendChild(
+                    createDividerRow(4, "Quick hits (under 1 minute)")
+                );
+            }
+            for (const entry of quickEntries) {
+                renderEntryRow(entry);
+            }
         }
     }
 
@@ -155,6 +340,7 @@ class OverviewView {
             labelCell.textContent = formatEntryLabel(entry, "Idle");
 
             const durationCell = document.createElement("td");
+            durationCell.className = "numeric-cell";
             durationCell.textContent = formatDuration(entry.seconds ?? 0);
 
             row.append(labelCell, durationCell);
@@ -162,12 +348,124 @@ class OverviewView {
         }
     }
 
+    renderProjectTable(entries) {
+        this.projectTableBody.innerHTML = "";
+        if (!Array.isArray(entries) || !entries.length) {
+            this.projectTableBody.appendChild(
+                createEmptyRow(2, "No project time recorded for this range.")
+            );
+            return;
+        }
+        for (const item of entries) {
+            const row = document.createElement("tr");
+            const nameCell = document.createElement("td");
+            nameCell.textContent = item?.project_name ?? "Unnamed";
+            const durationCell = document.createElement("td");
+            durationCell.className = "numeric-cell";
+            durationCell.textContent = formatDuration(item?.seconds ?? 0);
+            row.append(nameCell, durationCell);
+            this.projectTableBody.appendChild(row);
+        }
+    }
+
+    async handleProjectCommit(entry, projectInput, statusLabel) {
+        const originalValue = (projectInput.dataset.initialValue ?? "").trim();
+        const nextValue = projectInput.value.trim();
+
+        if (!nextValue && !originalValue) {
+            statusLabel.textContent = "";
+            statusLabel.classList.remove("visible", "error");
+            return;
+        }
+        if (nextValue === originalValue) {
+            statusLabel.textContent = "";
+            statusLabel.classList.remove("visible", "error");
+            return;
+        }
+
+        const sanitized = sanitizeNullable(projectInput.value ?? "");
+        if (!sanitized) {
+            showToast("Project name is required.", true);
+            projectInput.value = projectInput.dataset.initialValue ?? "";
+            statusLabel.textContent = "";
+            statusLabel.classList.remove("visible", "error");
+            return;
+        }
+
+        const payload = {
+            project_name: sanitized,
+        };
+        if (entry.process_name) {
+            payload.process_name = entry.process_name;
+        }
+        if (entry.window_title) {
+            payload.window_title = entry.window_title;
+        }
+
+        projectInput.disabled = true;
+        projectInput.classList.add("saving");
+        statusLabel.textContent = "Saving…";
+        statusLabel.classList.add("visible");
+        statusLabel.classList.remove("error");
+
+        try {
+            const response = await fetch("/api/project-mappings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) {
+                const detail = await response.json().catch(() => ({}));
+                const message =
+                    typeof detail?.detail === "string"
+                        ? detail.detail
+                        : `Assignment failed (${response.status})`;
+                throw new Error(message);
+            }
+
+            projectInput.dataset.initialValue = sanitized;
+            statusLabel.textContent = "Saved";
+            statusLabel.classList.remove("error");
+            this.lastProjectName = sanitized;
+            this.mergeProjectNames([sanitized]);
+            showToast(`Assigned to ${sanitized}.`);
+
+            await this.loadProjectMappings();
+            const currentRange = this.getNormalizedRange(false);
+            if (currentRange) {
+                void this.refresh(currentRange);
+            } else {
+                void this.refresh();
+            }
+        } catch (error) {
+            console.error(error);
+            statusLabel.textContent = "Failed";
+            statusLabel.classList.add("error");
+            showToast(
+                error instanceof Error ? error.message : "Failed to assign project.",
+                true
+            );
+            projectInput.value = projectInput.dataset.initialValue ?? "";
+        } finally {
+            projectInput.disabled = false;
+            projectInput.classList.remove("saving");
+            window.setTimeout(() => {
+                statusLabel.classList.remove("visible");
+                statusLabel.classList.remove("error");
+            }, 1600);
+        }
+    }
+
     renderError() {
         this.summaryContainer.innerHTML = `<p class="error">Overview not available.</p>`;
         this.tableBody.innerHTML = "";
-        this.tableBody.appendChild(createEmptyRow(3, "No data available."));
+        this.tableBody.appendChild(createEmptyRow(4, "No data available."));
         this.idleTableBody.innerHTML = "";
         this.idleTableBody.appendChild(createEmptyRow(2, "No data available."));
+        if (this.projectTableBody) {
+            this.projectTableBody.innerHTML = "";
+            this.projectTableBody.appendChild(createEmptyRow(2, "No data available."));
+        }
     }
 }
 
@@ -505,6 +803,16 @@ async function refreshStatus() {
 
 function createEmptyRow(colSpan, message) {
     const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = colSpan;
+    cell.textContent = message;
+    row.appendChild(cell);
+    return row;
+}
+
+function createDividerRow(colSpan, message) {
+    const row = document.createElement("tr");
+    row.className = "group-divider";
     const cell = document.createElement("td");
     cell.colSpan = colSpan;
     cell.textContent = message;

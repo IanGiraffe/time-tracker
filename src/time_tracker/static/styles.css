@@ -190,6 +190,114 @@ tbody tr:hover {
     background-color: rgba(37, 99, 235, 0.04);
 }
 
+.project-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    min-width: 160px;
+}
+
+.project-selector-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex: 1;
+    min-width: 0;
+}
+
+.project-selector {
+    flex: 1;
+    min-width: 0;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid rgba(148, 163, 184, 0.6);
+    border-radius: 6px;
+    font: inherit;
+    background-color: rgba(148, 163, 184, 0.08);
+    color: inherit;
+    transition: border-color 0.15s ease;
+}
+
+.project-selector:focus {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.project-selector::placeholder {
+    color: var(--text-muted);
+}
+
+.project-selector.saving {
+    opacity: 0.6;
+}
+
+.project-picker-button {
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid rgba(148, 163, 184, 0.6);
+    background: rgba(148, 163, 184, 0.12);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.project-picker-button:hover {
+    background: rgba(37, 99, 235, 0.12);
+    border-color: var(--accent);
+}
+
+.project-picker-button:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.project-picker-button::after {
+    content: "";
+    border-style: solid;
+    border-width: 6px 5px 0 5px;
+    border-color: var(--text-muted) transparent transparent transparent;
+    display: inline-block;
+}
+
+.project-status {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    white-space: nowrap;
+}
+
+.project-status.visible {
+    opacity: 1;
+}
+
+.project-status.error {
+    color: var(--danger);
+}
+
+.numeric-cell {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.group-divider td {
+    padding-top: 1rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+#overview-table th:last-child,
+#idle-table th:last-child,
+#projects-table th:last-child,
+.numeric-header {
+    text-align: right;
+}
+
 .tag {
     display: inline-block;
     padding: 0.25rem 0.5rem;
