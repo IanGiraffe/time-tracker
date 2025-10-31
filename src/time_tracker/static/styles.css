@@ -13,6 +13,35 @@
     font-family: "Segoe UI", Helvetica, Arial, sans-serif;
 }
 
+.project-bar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+    padding: 0.5rem 2rem 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.project-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    background: rgba(37, 99, 235, 0.1);
+    border: 1px solid rgba(37, 99, 235, 0.25);
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.project-pill .name {
+    font-weight: 600;
+}
+
+.project-pill .value {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
 @media (prefers-color-scheme: dark) {
     body {
         background-color: var(--bg-dark);

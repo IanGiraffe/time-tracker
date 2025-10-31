@@ -1,4 +1,5 @@
 const statusIndicator = document.getElementById("collector-status");
+const projectBar = document.getElementById("project-bar");
 const navButtons = Array.from(document.querySelectorAll(".nav-tab"));
 const toast = document.getElementById("toast");
 
@@ -13,6 +14,7 @@ class OverviewView {
         this.tableBody = document.querySelector("#overview-table tbody");
         this.idleTableBody = document.querySelector("#idle-table tbody");
         this.projectTableBody = document.querySelector("#projects-table tbody");
+        this.projectBarEl = projectBar;
         this.knownProjects = [];
         this.projectOptionsId = `project-options-${Math.random().toString(36).slice(2, 8)}`;
         this.projectOptionsList = document.createElement("datalist");
@@ -187,6 +189,23 @@ class OverviewView {
         this.renderActiveTable(entries);
         this.renderIdleTable(idleEntries);
         this.renderProjectTable(projectTotals);
+
+        // Render project totals bar across the top
+        if (this.projectBarEl) {
+            if (projectTotals.length) {
+                this.projectBarEl.hidden = false;
+                this.projectBarEl.innerHTML = projectTotals
+                    .map((item) => {
+                        const name = item?.project_name ?? "Unnamed";
+                        const seconds = Number(item?.seconds ?? 0);
+                        return `<span class="project-pill"><span class="name">${escapeHtml(name)}</span><span class="value">${formatDuration(seconds)}</span></span>`;
+                    })
+                    .join("");
+            } else {
+                this.projectBarEl.hidden = true;
+                this.projectBarEl.innerHTML = "";
+            }
+        }
 
         if (projectTotals.length) {
             const newNames = projectTotals
@@ -465,6 +484,10 @@ class OverviewView {
         if (this.projectTableBody) {
             this.projectTableBody.innerHTML = "";
             this.projectTableBody.appendChild(createEmptyRow(2, "No data available."));
+        }
+        if (this.projectBarEl) {
+            this.projectBarEl.hidden = true;
+            this.projectBarEl.innerHTML = "";
         }
     }
 }
@@ -770,6 +793,10 @@ async function switchView(viewKey, options = {}) {
     });
 
     activeViewKey = viewKey;
+    // Hide project bar when not in overview; Overview will show/update it on render
+    if (projectBar) {
+        projectBar.hidden = viewKey !== "overview";
+    }
     const view = views[viewKey];
     if (typeof view.activate === "function") {
         try {
@@ -865,6 +892,15 @@ function formatDuration(totalSeconds) {
         2,
         "0"
     )}:${String(remaining).padStart(2, "0")}`;
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
 let toastTimeout = null;
